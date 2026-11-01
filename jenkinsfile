@@ -1,0 +1,86 @@
+pipeline {
+    agent any
+
+    environment {
+        GIT_REPO_URL       = 'https://github.com/Ellijah63/monitoring-infra.git'
+        GIT_BRANCH         = 'main'
+        PROMETHEUS_PORT    = '9090'
+        GRAFANA_PORT       = '3000'
+    }
+
+    stages {
+        stage('Checkout Monitoring Config') {
+            steps {
+                git branch: "${GIT_BRANCH}", url: "${GIT_REPO_URL}"
+            }
+        }
+
+        stage('Lint Prometheus Config (promtool)') {
+            steps {
+                script {
+                    echo "Validating prometheus.yml and rules.yml..."
+
+                    // Run promtool inside the official Prometheus Docker container to validate syntax
+                    sh """
+                        docker run --rm \
+                          -v \$(pwd)/prometheus:/etc/prometheus \
+                          --entrypoint promtool \
+                          prom/prometheus:latest \
+                          check config /etc/prometheus/prometheus.yml
+
+                        docker run --rm \
+                          -v \$(pwd)/prometheus:/etc/prometheus \
+                          --entrypoint promtool \
+                          prom/prometheus:latest \
+                          check rules /etc/prometheus/rules.yml
+                    """
+                }
+            }
+        }
+
+        stage('Deploy / Reload Stack') {
+            steps {
+                script {
+                    echo "Deploying monitoring stack via Docker Compose..."
+
+                    // Deploy the stack using docker compose
+                    sh "docker compose up -d"
+
+                    // If Prometheus is already running, trigger an instant config reload without restart:
+                    sh "curl -X POST http://localhost:${PROMETHEUS_PORT}/-/reload || true"
+                }
+            }
+        }
+
+        stage('Smoke Test Services') {
+            steps {
+                script {
+                    echo "Verifying Prometheus and Grafana health..."
+                    sleep 5
+
+                    // Check Prometheus health endpoint
+                    sh "curl -f http://localhost:${PROMETHEUS_PORT}/-/healthy"
+                    echo "Prometheus is UP on port ${PROMETHEUS_PORT}"
+
+                    // Check Grafana health endpoint
+                    sh "curl -f http://localhost:${GRAFANA_PORT}/api/health"
+                    echo "Grafana is UP on port ${GRAFANA_PORT}"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            node('built-in') {
+                sh 'docker builder prune -f'
+            }
+        }
+        success {
+            echo "Monitoring stack pipeline completed successfully!"
+        }
+        failure {
+            echo "Monitoring stack pipeline failed. Check configuration syntax or logs."
+        }
+    }
+}
