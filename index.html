@@ -26,6 +26,8 @@
     #score-board {
       font-size: 1.25rem;
       margin-bottom: 12px;
+      display: flex;
+      gap: 20px;
     }
     canvas {
       border: 3px solid #444;
@@ -37,8 +39,12 @@
       color: #aaa;
       font-size: 0.9rem;
     }
-    button {
+    .controls {
+      display: flex;
+      gap: 10px;
       margin-top: 12px;
+    }
+    button {
       padding: 8px 16px;
       background: #00bcd4;
       border: none;
@@ -50,21 +56,37 @@
     button:hover {
       background: #0097a7;
     }
+    button.secondary {
+      background: #555;
+      color: #fff;
+    }
+    button.secondary:hover {
+      background: #666;
+    }
   </style>
 </head>
 <body>
 
   <h1>Snake Game</h1>
-  <div id="score-board">Score: <span id="score">0</span></div>
+  <div id="score-board">
+    <div>Score: <span id="score">0</span></div>
+    <div>High Score: <span id="high-score">0</span></div>
+  </div>
   <canvas id="gameCanvas" width="400" height="400"></canvas>
   <div class="instructions">Use the Arrow Keys or WASD to move.</div>
-  <button id="restartBtn">Restart Game</button>
+  
+  <div class="controls">
+    <button id="restartBtn">Restart Game</button>
+    <button id="resetHighScoreBtn" class="secondary">Reset High Score</button>
+  </div>
 
   <script>
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
     const scoreElement = document.getElementById("score");
+    const highScoreElement = document.getElementById("high-score");
     const restartBtn = document.getElementById("restartBtn");
+    const resetHighScoreBtn = document.getElementById("resetHighScoreBtn");
 
     const gridSize = 20;
     const tileCount = canvas.width / gridSize;
@@ -74,24 +96,28 @@
     let dx = 0;
     let dy = 0;
     let score = 0;
-    let gameLoop;
     let isGameOver = false;
 
+    // Load persisted high score
+    let highScore = parseInt(localStorage.getItem("snake_high_score"), 10) || 0;
+    highScoreElement.textContent = highScore;
+
     function draw() {
-      // Background
+      // Board background
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Food
+      // Food item
       ctx.fillStyle = "#ff4444";
       ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize - 2, gridSize - 2);
 
-      // Snake
+      // Snake body and head
       snake.forEach((segment, index) => {
         ctx.fillStyle = index === 0 ? "#00e676" : "#00a152";
         ctx.fillRect(segment.x * gridSize, segment.y * gridSize, gridSize - 2, gridSize - 2);
       });
 
+      // Game over overlay
       if (isGameOver) {
         ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -127,10 +153,18 @@
 
       snake.unshift(head);
 
-      // Food eaten
+      // Food consumption check
       if (head.x === food.x && head.y === food.y) {
         score += 10;
         scoreElement.textContent = score;
+
+        // Check and persist new high score
+        if (score > highScore) {
+          highScore = score;
+          highScoreElement.textContent = highScore;
+          localStorage.setItem("snake_high_score", highScore);
+        }
+
         spawnFood();
       } else {
         snake.pop();
@@ -142,12 +176,14 @@
         x: Math.floor(Math.random() * tileCount),
         y: Math.floor(Math.random() * tileCount)
       };
-      // Prevent food from spawning on snake body
-      snake.forEach(segment => {
-        if (food.x === segment.x && food.y === segment.y) {
+
+      // Ensure food does not spawn directly on top of the snake body
+      for (let i = 0; i < snake.length; i++) {
+        if (food.x === snake[i].x && food.y === snake[i].y) {
           spawnFood();
+          break;
         }
-      });
+      }
     }
 
     function endGame() {
@@ -164,6 +200,13 @@
       spawnFood();
     }
 
+    function resetHighScore() {
+      highScore = 0;
+      localStorage.removeItem("snake_high_score");
+      highScoreElement.textContent = "0";
+    }
+
+    // Direction controls (Prevents immediate 180-degree self-collisions)
     window.addEventListener("keydown", (e) => {
       switch (e.key) {
         case "ArrowUp":
@@ -190,13 +233,14 @@
     });
 
     restartBtn.addEventListener("click", resetGame);
+    resetHighScoreBtn.addEventListener("click", resetHighScore);
 
     function main() {
       update();
       draw();
     }
 
-    gameLoop = setInterval(main, 100);
+    setInterval(main, 100);
     draw();
   </script>
 </body>
